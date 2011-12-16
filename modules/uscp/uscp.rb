@@ -77,6 +77,12 @@ class USCPclient
         elsif msg.match(/^\.bql (.+?)$/)
           exec_bql($1)
 
+        elsif msg.match(/^\.s (.+?) (.+)$/)
+          exec_sub($1, $2, {})
+
+        elsif msg.match(/^\.unsub (.+?)$/)
+          exec_unsub($1)
+
         elsif msg.match(/^\.status$/)
           status_info()
 
@@ -215,8 +221,8 @@ class USCPclient
 
   def show_help
     reply_user(@jid, "=== USCP Bridge Commands ===", "std")
-    reply_user(@jid, " .bql [bql]       : execute a BQL query", "std")
-    reply_user(@jid, " .s [name] [BQL | urn]  : Subscribe to a feed", "std")
+    reply_user(@jid, " .bql [bql]     : execute a BQL query", "std")
+    reply_user(@jid, " .s [name] [BQL | urn] {params} : Subscribe to a feed", "std")
     reply_user(@jid, " .unsub [name]  : Unsubscribe from a feed", "std")
     reply_user(@jid, " .status        : Status info", "std")
     reply_user(@jid, " .app [urn]     : Set application context", "std")
@@ -230,4 +236,13 @@ class USCPclient
     newActivities = convert_feed(body)
     send_to_user(newActivities)
   end
+
+  def exec_sub(name, bql, params)
+    subscribe(name, bql, params)
+  end
+
+  def exec_unsub(name)
+    unsubscribe(name)
+  end
+
 end # class
