@@ -86,6 +86,9 @@ class USCPclient
         elsif msg.match(/^\.status$/)
           status_info()
 
+        elsif msg.match(/^\.bql-help/)
+          exec_bql_help()
+
         elsif msg.match(/^\.quit$/)
           self.disconnect()
 
@@ -220,15 +223,30 @@ class USCPclient
   end
 
   def show_help
-    reply_user(@jid, "=== USCP Bridge Commands ===", "std")
-    reply_user(@jid, " .bql [bql]     : execute a BQL query", "std")
-    reply_user(@jid, " .s [name] [BQL | urn] {params} : Subscribe to a feed", "std")
-    reply_user(@jid, " .unsub [name]  : Unsubscribe from a feed", "std")
-    reply_user(@jid, " .status        : Status info", "std")
-    reply_user(@jid, " .app [urn]     : Set application context", "std")
-    reply_user(@jid, " .feeds         : View feeds defined in current application context", "std")
-    reply_user(@jid, " .h |.?         : This help msg", "std")
-    reply_user(@jid, " .quit          : Quit", "std")
+    reply([
+      "=== USCP Bridge Commands ===",
+      " .bql [bql]     : execute a BQL query",
+      " .bql-help      : Show BQL samples and help",
+      " .s [name] [BQL | urn] {params} : Subscribe to a feed",
+      " .unsub [name]  : Unsubscribe from a feed",
+      " .status        : Status info",
+      " .app [urn]     : Set application context",
+      " .feeds         : View feeds defined in current application context",
+      " .h |.?         : This help msg",
+      " .quit          : Quit"
+    ])
+  end
+
+  def exec_bql_help()
+    msgs = Array.new
+
+    msgs.push("\nHere's a list of all where clauses and samples:\n")
+
+    selections = load_query_info()
+    selections.each {|key, value|
+      msgs.push(key + " => " + value["sample"])
+    }
+    reply(msgs)
   end
 
   def exec_bql(bql)
@@ -245,4 +263,20 @@ class USCPclient
     unsubscribe(name)
   end
 
+  def reply(msgs)
+    reply_user(@jid, msgs.join("\n"), "std")
+  end
+
+  def reply_ind(msgs)
+    msgs.each do |msg|
+      reply_user(@jid, msg, "std")
+    end
+  end
+
+  def load_query_info()
+    file = File.open(File.dirname(__FILE__) + "/query-options.json")
+    json = file.readlines.to_s
+    data = JSON.parse(json)
+    data["selections"]
+  end
 end # class

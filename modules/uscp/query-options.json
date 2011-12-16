@@ -1,0 +1,42 @@
+{
+  "selections": {
+    "id": { "types": ["urn:activity:?"], "sample": "select * from ucp where id = 'urn:activity:123'"},
+    "app": {"types": ["urn:app:?"], "sample": "select * from ucp where app = 'urn:app:linkedin'"},
+    "spaces": {"types": ["string"], "sample": "select * from ucp where spaces in ('feed', 'group')" },
+    "property": {"types": ["property"], "sample": "select * from ucp where property = 'urn:linkedin:member:nickname=ninja'"},
+    "query": {"types": ["string"], "sample": "select * from ucp where query is 'linkedin'"},
+    "createdDate": {"types": ["utcdatelong"], "sample": "select * from ucp where createdDate = '0000000000000000000000000001323814653000'"},
+    "modifiedDate": {"types": ["utcdatelong"], "sample": "select * from ucp where modifiedDate = '0000000000000000000000000001323814653000'"},
+    "visibility.public": {"types": ["true", "false"], "sample": "select * from ucp where visibility.public = 'true'"},
+    "visibility.network": {"types": ["CONNECTIONS", "SECOND_DEGREE"], "sample": "select * from ucp where visibility.network = 'CONNECTIONS'"},
+    "visibility.include": {"types": ["urn:*"], "sample":"select * from ucp where visibility.include = 'urn:member:1213'"},
+    "visibility.exclude": {"types": ["urn:*"], "sample":"select * from ucp where visibility.exclude = 'urn:member:1213"},
+    "attributedActivity.id": {"types": ["urn:activity:*"], "sample":"select * from ucp where attributedActivity.id = 'urn:activity:123'"},
+    "actor.id": {"types": ["urn:member:*", "urn:company:*"], "sample": "select * from ucp where actor.id = 'urn:member:1213'"},
+    "actor.type": {"types": ["urn:linkedin:member", "urn:linkedin:company"], "sample":"select * from where actor.type = 'urn:linkedin:member'"},
+    "actor.url": {"types": ["url"], "sample":"select * from ucp where actor.url = 'http://linkedin.com/profiles/123'"},
+    "actor.image": {"types": ["url"], "sample":"select * from ucp where actor.image = 'http://linkedin.com/profile/img/123.png'"},
+    "actor.property": {"types": ["property"], "sample":"select * from ucp where actor.property = 'urn:linkedin:member:nickname=ninja'"},
+    "actor.company": {"types": ["companyId"], "sample":"select * from ucp where actor.company = 'urn:company:1337'"},
+    "verb.type": {"types": ["urn:verb:*"], "sample":"select * from ucp where verb.type = 'urn:github:commit'"},
+    "verb.property": {"types": ["property"], "sample":"select * from ucp where verb.property = 'urn:github:commit:branch=master'"},
+    "object.id": {"types": ["urn:member:*", "urn:company:*"], "sample": "select * from ucp where object.id = 'urn:member:1213'"},
+    "object.type": {"types": ["urn:linkedin:member", "urn:linkedin:company"], "sample":"select * from where object.type = 'urn:linkedin:member'"},
+    "object.url": {"types": ["url"], "sample":"select * from ucp where object.url = 'http://linkedin.com/profiles/123'"},
+    "object.image": {"types": ["url"], "sample":"select * from ucp where object.image = 'http://linkedin.com/profile/img/123.png'"},
+    "object.property": {"types": ["property"], "sample":"select * from ucp where object.property = 'urn:linkedin:member:nickname=ninja'"},
+    "object.company": {"types": ["companyId"], "sample":"select * from ucp where object.company = 'urn:company:1337'"},
+    "target.id": {"types": ["urn:member:*", "urn:company:*"], "sample": "select * from ucp where target.id = 'urn:member:1213'"},
+    "target.type": {"types": ["urn:*"], "sample":"select * from where target.type = 'urn:github:branch'"},
+    "target.url": {"types": ["url"], "sample":"select * from ucp where target.url = 'https://github.com/ytoolshed/range'"},
+    "target.image": {"types": ["url"], "sample":"select * from ucp where target.image = 'http://linkedin.com/profile/img/123.png'"},
+    "target.property": {"types": ["property"], "sample":"select * from ucp where target.property = 'urn:github:branch:read-only=https://github.com/ytoolshed/range.git'"},
+    "target.company": {"types": ["companyId"], "sample":"select * from ucp where target.company = 'urn:company:1337'"}
+  },
+  "types": {
+    "utcdatelong": "UTC epoch time date as a long",
+    "string": "An arbitrary string",
+    "url": "A valid URL",
+    "property": "A property identifier"
+  }
+}
