@@ -56,6 +56,86 @@ class USCPclient
     @thread[:name] = "USCP:#{@jid}"
   end
 
+  def process_msg(ujid, msgtimestr, msgbody)
+    # not doing any internal processing to this message.
+    # just pass it on to the remote application.
+    #reply_user(@jid, "got process_msg", "std")
+    handle_user_input(msgbody)
+  end
+
+  def handle_user_input(msg)
+    if msg.chomp == "QUIT"
+      self.disconnect()
+    else
+      begin
+        if msg.match(/^\.h.*$/)
+          show_help()
+
+        elsif msg.match(/^\.\?$/)
+          show_help()
+
+        elsif msg.match(/^\.bql (.+?)$/)
+          exec_bql($1)
+
+        elsif msg.match(/^\.status$/)
+          status_info()
+
+        elsif msg.match(/^\.quit$/)
+          self.disconnect()
+
+        elsif msg.match(/^\.quit (.+)$/)
+          self.disconnect()
+        else
+        end
+
+      rescue SocketError => se
+        reply_user(@jid, "Socket error (send): " + se.to_s, "std")
+      rescue Exception => ex
+        reply_user(@jid, "Error (send): " + ex.to_s, "std")
+      end
+    end
+  end
+
+  def disconnect(ujid=nil)
+    @sock.close unless @sock.closed?
+    Thread.kill(@thread)
+    reply_user(@jid, "Disconnected from USCP.", "std")
+    $bridges.delete($bridged_users[@jid])
+    $bridged_users.delete(@jid)
+    logit("#{@jid} has exited the USCP client.")
+    reply_user(@jid, "Entering lobby...", "std")
+    $lobby_users.each do |user|
+      reply_user(user, "#{$user_nicks[@jid]} has exited the USCP and entered the lobby.", "std") unless user == @jid
+    end
+    $b.add_user_to_lobby(@jid)
+    #$b.xmpp.status(nil, $b.get_status)
+  end
+
+  def type
+    "USCP"
+  end
+
+  def info
+    "USCP: " + @jid
+  end
+
+  private
+
+  def status_info()
+    reply_user(@jid, "subscriptions:", "std")
+    @subscriptions.each {|key, value|
+      reply_user(@jid, "#{key} => #{value[:bql]} [#{value[:params]}] ", "std")
+    }
+  end
+
+  def send_to_user(activities)
+    if activities && activities.length > 0
+      activities.each do |activity|
+        reply_user(@jid, activity["body"], "std")
+      end
+    end
+  end
+
   def subscribe(name, bql, params)
     @subscriptions[name] = { :bql => bql, :params => params }
   end
@@ -87,6 +167,11 @@ class USCPclient
     newActivities
   end
 
+  def convert_feed(raw_json)
+    json = JSON.parse(raw_json)
+    json["value"]
+  end
+
   def poll_feed(bql, params)
     code, headers, body = query_feed(bql, params)
     # filter out events already seen adn return the new ones
@@ -97,12 +182,12 @@ class USCPclient
     parameters = (params && params.length > 0) ? JSON.parse(params) : {}
     json = {
 #        "viewerId" => member_id,
-        "feed" => {
-            "query" => bql,
-            "params" => parameters || {}
-        },
-        "start" => 0,
-        "count" => 10
+      "feed" => {
+          "query" => bql,
+          "params" => parameters || {}
+      },
+      "start" => 0,
+      "count" => 10
     }.to_json
     logit("#{@feedUrl}/?action=query")
     code, headers, body = post("#{@feedUrl}/?action=query", {}, json)
@@ -128,171 +213,21 @@ class USCPclient
     end
   end
 
-  def channel_listing
-    begin
-      if @channel_list.length > 0
-        reply_user(@jid, "List of active channels:", "std")
-        count = 0
-        @channel_list.each do |c|
-          reply_user(@jid, "--> #{c.name}", "std")
-        end
-        reply_user(@jid, "Currently active on: '#{@channel.name}'", "std")
-      else
-        reply_user(@jid, "Not on any channels.  Use .j to join.", "std")
-      end
-      if @muted_channel_list.length > 0
-        reply_user(@jid, "List of muted channels:", "std")
-        count = 0
-        @muted_channel_list.each do |c|
-          reply_user(@jid, "--> #{c.name} [Muted]", "std")
-        end
-      end
-    rescue Exception => ex
-      reply_user(@jid, "Error (channel_listing): " + ex.to_s, "std")
-    end
-  end
-
-  def change_active_channel(channel_name=nil)
-    begin
-      if channel_name
-        found = false
-        @channel_list.each do |c|
-          if c.name == channel_name
-            @channel = c
-            found = true
-          end
-        end
-        if found
-          reply_user(@jid, "active channel now '#{@channel.name}'", "std")
-        else
-          reply_user(@jid, "you aren't joined to '#{channel_name}'", "std")
-        end
-      else
-        if @channel_list.length > 0
-          i = 0
-          @channel_list.each do |c|
-            if c.name == @channel.name
-              if i < (@channel_list.length - 1)
-                @channel = @channel_list[i+1]
-              else
-                @channel = @channel_list[0]
-              end
-              break
-            end
-            i += 1
-          end
-          reply_user(@jid, "active channel now '#{@channel.name}'", "std")
-        else
-          reply_user(@jid, "Not on any channels.  Use .j to join.", "std")
-        end
-      end
-    rescue Exception => ex
-      reply_user(@jid, "Error (change_active_channel): " + ex.to_s, "std")
-    end
-  end
-
-  def get_channel_roster
-    begin
-      if not @channel
-        reply_user(@jid, "Not on any channels.  Use .j to join.", "std")
-        return nil
-      end
-      usercount = 0
-      opcount = 0
-      userlist = ""
-      users = Array.new
-      @channel.roster.each do |k, v|
-        if v.op
-          users << "@#{v.nick}"
-          opcount += 1
-        else
-          users << v.nick
-          usercount += 1
-        end
-      end
-      userlist = users.join(", ")
-      reply_user(@jid, "[#{@channel.name}]: #{userlist}", "std")
-      reply_user(@jid, "[#{@channel.name}]: #{usercount} users, #{opcount} ops", "std")
-    rescue Exception => ex
-      reply_user(@jid, "Error (get_channel_roster): " + ex.to_s, "std")
-    end
-  end
-
   def show_help
     reply_user(@jid, "=== USCP Bridge Commands ===", "std")
-    reply_user(@jid, " .quit [msg] : Quit (with msg)", "std")
-    reply_user(@jid, " .status    : Status info", "std")
-    reply_user(@jid, " .h |.?     : This help msg", "std")
+    reply_user(@jid, " .bql [bql]       : execute a BQL query", "std")
+    reply_user(@jid, " .s [name] [BQL | urn]  : Subscribe to a feed", "std")
+    reply_user(@jid, " .unsub [name]  : Unsubscribe from a feed", "std")
+    reply_user(@jid, " .status        : Status info", "std")
+    reply_user(@jid, " .app [urn]     : Set application context", "std")
+    reply_user(@jid, " .feeds         : View feeds defined in current application context", "std")
+    reply_user(@jid, " .h |.?         : This help msg", "std")
+    reply_user(@jid, " .quit          : Quit", "std")
   end
 
-  def handle_user_input(msg)
-    if msg.chomp == "QUIT"
-      self.disconnect()
-    else
-      begin
-        if msg.match(/^\.h.*$/)
-          show_help()
-
-        elsif msg.match(/^\.\?$/)
-          show_help()
-
-        elsif msg.match(/^\.status$/)
-          status_info()
-
-        elsif msg.match(/^\.quit$/)
-          self.disconnect()
-
-        elsif msg.match(/^\.quit (.+)$/)
-          self.disconnect()
-        else
-        end
-
-      rescue SocketError => se
-        reply_user(@jid, "Socket error (send): " + se.to_s, "std")
-      rescue Exception => ex
-        reply_user(@jid, "Error (send): " + ex.to_s, "std")
-      end
-    end
+  def exec_bql(bql)
+    code, header, body = query_feed(bql, {})
+    newActivities = convert_feed(body)
+    send_to_user(newActivities)
   end
-
-  def process_msg(ujid, msgtimestr, msgbody)
-    # not doing any internal processing to this message.
-    # just pass it on to the remote application.
-    #reply_user(@jid, "got process_msg", "std")
-    handle_user_input(msgbody)
-  end
-               
-  def disconnect(ujid=nil)
-    @sock.close unless @sock.closed?
-    Thread.kill(@thread)
-    reply_user(@jid, "Disconnected from USCP.", "std")
-    $bridges.delete($bridged_users[@jid])
-    $bridged_users.delete(@jid)
-    logit("#{@jid} has exited the USCP client.")
-    reply_user(@jid, "Entering lobby...", "std")
-    $lobby_users.each do |user|
-      reply_user(user, "#{$user_nicks[@jid]} has exited the USCP and entered the lobby.", "std") unless user == @jid
-    end
-    $b.add_user_to_lobby(@jid)
-    #$b.xmpp.status(nil, $b.get_status)
-  end
-
-  def type
-    "USCP"
-  end
-
-  def info
-    "USCP: " + @jid
-  end
-
-  private
-
-  def send_to_user(activities)
-    if activities && activities.length > 0
-      activities.each do |activity|
-        reply_user(@jid, activity["body"], "std")
-      end
-    end
-  end
-
 end # class

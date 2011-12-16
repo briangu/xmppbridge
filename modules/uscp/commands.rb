@@ -26,6 +26,6 @@ $cmdarray.push(Botcmd.new(
     end
   },
   :return => nil,
-  :helptxt => 'Connect to Sandbox USCP.'
+  :helptxt => 'Connect to USCP.'
   ))
 
