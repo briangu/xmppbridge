@@ -1,5 +1,3 @@
-# encoding: iso-8859-1
-
 require 'rubygems'
 require 'socket'
 require 'json'
@@ -16,6 +14,9 @@ class USCPclient
 
     @version = "1.0"
 
+    @actor = "urn:member:45310686"
+    @app = 'urn:app:ucpbot'
+
     @jid = ujid
     @feedUrl = feedUrl
     @publishUrl = publishUrl
@@ -29,6 +30,7 @@ class USCPclient
     @cache = LRUCache.new(:ttl => 3600)
 
     subscribe("all", "select * from ucp", {})
+    subscribe("all-li", "select * from ucp where app = 'urn:app:linkedin'", {})
 
     @thread = Thread.new do
       begin
@@ -77,6 +79,9 @@ class USCPclient
         elsif msg.match(/^\.bql (.+?)$/)
           exec_bql($1)
 
+        elsif msg.match(/^\.app (.+?)$/)
+          exec_app($1)
+
         elsif msg.match(/^\.s (.+?) (.+)$/)
           exec_sub($1, $2, {})
 
@@ -94,7 +99,12 @@ class USCPclient
 
         elsif msg.match(/^\.quit (.+)$/)
           self.disconnect()
+
+        elsif msg.match(/^\.say (.+)$/)
+          exec_say($1)
+
         else
+          reply(["sup dawg"])
         end
 
       rescue SocketError => se
@@ -106,7 +116,6 @@ class USCPclient
   end
 
   def disconnect(ujid=nil)
-    @sock.close unless @sock.closed?
     Thread.kill(@thread)
     reply_user(@jid, "Disconnected from USCP.", "std")
     $bridges.delete($bridged_users[@jid])
@@ -131,10 +140,15 @@ class USCPclient
   private
 
   def status_info()
-    reply_user(@jid, "subscriptions:", "std")
+    msgs = []
+
+    msgs.push("app: " + @app)
+    msgs.push("subscriptions:")
     @subscriptions.each {|key, value|
-      reply_user(@jid, "#{key} => #{value[:bql]} [#{value[:params]}] ", "std")
+      msgs.push("#{key} => #{value[:bql]} [#{value[:params]}] ")
     }
+
+    reply(msgs)
   end
 
   def send_to_user(activities)
@@ -204,22 +218,53 @@ class USCPclient
     return [code, headers, body]
   end
 
-  def send(msg)
-    if msg.chomp == "quit"
-      disconnect(@jid)
-    else
-      begin
-        # TODO: publish to uscp
-      rescue SocketError => se
-        reply_user(@jid, "Socket error (send): " + se.to_s, "std")
-        logit("Socket error (send): " + se.to_s)
-        disconnect(@jid)
-      rescue Exception => ex
-        reply_user(@jid, "Error (send): " + ex.to_s, "std")
-        logit("Error (send): " + ex.to_s)
-        disconnect(@jid)
-      end
-    end
+  def publish_activity(activity)
+#    reply_user(@jid, activity.to_json, "std")
+#    reply_user(@jid, "#{@publishUrl}", "std")
+    code, headers, body = post("#{@publishUrl}", {}, activity.to_json)
+#    reply_user(@jid, [code, headers, body], "std")
+  end
+
+  def create_object_summary(type, url, title, description, image, properties)
+    object = {}
+    object[:type] = type unless type.nil?
+    object[:url] = url unless url.nil?
+    object[:title] = title unless title.nil?
+    object[:description] = description unless description.nil?
+    object[:image] = image unless image.nil?
+    object[:properties] = properties unless properties.nil?
+    object
+  end
+
+  def default_visibility
+    {"public" => true}
+  end
+
+  def create_activity(app, actor, verb, object, visibility)
+    activity = {}
+    activity[:app] = app
+    activity[:actor] = actor
+    activity[:verb] = verb
+    activity[:object] = object
+    activity[:visibility] = visibility
+    activity
+  end
+
+  def create_verb_summary(type, commentary, properties)
+    verb = {}
+    verb["type"] = type unless type.nil?
+    verb["commentary"] = commentary unless commentary.nil?
+    verb["properties"] = properties unless properties.nil?
+    verb
+  end
+
+  def exec_say(msg)
+    verb = create_verb_summary("urn:verb:ucpbot:say", msg, nil)
+    object = create_object_summary(nil, nil, nil, nil, nil, nil)
+    activity = create_activity("urn:app:ucpbot", @actor, verb, object, default_visibility)
+    publish_activity(activity)
+#    reply(["you said: " + msg])
+    poll_subscriptions()
   end
 
   def show_help
@@ -247,6 +292,11 @@ class USCPclient
       msgs.push(key + " => " + value["sample"])
     }
     reply(msgs)
+  end
+
+  def exec_app(app)
+    @app = app
+    status_info()
   end
 
   def exec_bql(bql)
