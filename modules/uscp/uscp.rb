@@ -27,7 +27,7 @@ class USCPclient
     @channel_list = Array.new
     @subscriptions = {}
 
-    @cache = LRUCache.new(:ttl => 3600)
+    @cache = LRUCache.new(:max_size => 4096, :default => nil)
 
     subscribe("all", "select * from ucp", {})
     subscribe("all-li", "select * from ucp where app = 'urn:app:linkedin'", {})
@@ -63,6 +63,22 @@ class USCPclient
     # just pass it on to the remote application.
     #reply_user(@jid, "got process_msg", "std")
     handle_user_input(msgbody)
+  end
+
+  def show_help
+    reply([
+              "=== USCP Bridge Commands ===",
+              ".bql [bql]      : execute a BQL query",
+              ".bql-help       : Show BQL samples and help",
+              ".s [name] [BQL] : Subscribe to a feed",
+              ".unsub [name]   : Unsubscribe from a feed",
+              ".say [msg]      : Publish a message",
+              ".status         : Status info",
+              #      ".app [urn]      : Set application context",
+              #      ".feeds          : View feeds defined in current application context",
+              ".h |.?          : This help msg",
+              ".quit           : Quit"
+          ])
   end
 
   def handle_user_input(msg)
@@ -141,7 +157,6 @@ class USCPclient
 
   def status_info()
     msgs = []
-
     msgs.push("app: " + @app)
     msgs.push("subscriptions:")
     @subscriptions.each {|key, value|
@@ -182,9 +197,9 @@ class USCPclient
     newActivities = Array.new
     if activities && activities.length > 0
       activities.each do |update|
-        next if @cache[update["id"]]
+        next if !@cache.fetch(update["id"]).nil?
         newActivities.push(update)
-        @cache[update["id"]] = update
+        @cache.store(update["id"], 1)
       end
     end
     newActivities
@@ -219,10 +234,11 @@ class USCPclient
   end
 
   def publish_activity(activity)
-#    reply_user(@jid, activity.to_json, "std")
-#    reply_user(@jid, "#{@publishUrl}", "std")
-    code, headers, body = post("#{@publishUrl}", {}, activity.to_json)
-#    reply_user(@jid, [code, headers, body], "std")
+    publish_activity_json(activity.to_json)
+  end
+
+  def publish_activity_json(activity)
+    code, headers, body = post("#{@publishUrl}", {}, activity)
   end
 
   def create_object_summary(type, url, title, description, image, properties)
@@ -264,22 +280,6 @@ class USCPclient
     activity = create_activity("urn:app:ucpbot", @actor, verb, object, default_visibility)
     publish_activity(activity)
 #    reply(["you said: " + msg])
-    poll_subscriptions()
-  end
-
-  def show_help
-    reply([
-      "=== USCP Bridge Commands ===",
-      " .bql [bql]     : execute a BQL query",
-      " .bql-help      : Show BQL samples and help",
-      " .s [name] [BQL | urn] {params} : Subscribe to a feed",
-      " .unsub [name]  : Unsubscribe from a feed",
-      " .status        : Status info",
-      " .app [urn]     : Set application context",
-      " .feeds         : View feeds defined in current application context",
-      " .h |.?         : This help msg",
-      " .quit          : Quit"
-    ])
   end
 
   def exec_bql_help()
@@ -314,7 +314,7 @@ class USCPclient
   end
 
   def reply(msgs)
-    reply_user(@jid, msgs.join("\n"), "std")
+    reply_user(@jid, "\n" + msgs.join("\n"), "std")
   end
 
   def reply_ind(msgs)
