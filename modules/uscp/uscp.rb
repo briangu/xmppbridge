@@ -14,7 +14,7 @@ class USCPclient
 
     @version = "1.0"
 
-    @actor = "urn:member:45310686"
+    @actor = nil
     @app = 'urn:app:ucpbot'
 
     @jid = ujid
@@ -26,6 +26,7 @@ class USCPclient
     @channel = nil
     @channel_list = Array.new
     @subscriptions = {}
+    @paused = false
 
     @cache = LRUCache.new(:max_size => 4096, :default => nil)
 
@@ -38,7 +39,7 @@ class USCPclient
         logit("USCPclient v#{@version} - #{@jid} connection successful.")
         reply_user(@jid, "Welcome to USCP client v#{@version}!", $mtype)
         reply_user(@jid, "Type .h to get help.", "std")
-
+        reply_user(@jid, "use the .me command to set your member # (e.g. 45310686)", "std")
         $lobby_users.each do |u|
           reply_user(u, "#{$user_nicks[@jid]} connected to the USCP.", $mtype)
         end
@@ -47,8 +48,7 @@ class USCPclient
         #$b.xmpp.status(nil,$b.get_status)
 
         loop do
-          logit("polling")
-          poll_subscriptions()
+          poll_subscriptions() unless @paused
           sleep 10
         end
       rescue Exception => e
@@ -72,7 +72,10 @@ class USCPclient
               ".bql-help       : Show BQL samples and help",
               ".s [name] [BQL] : Subscribe to a feed",
               ".unsub [name]   : Unsubscribe from a feed",
+              ".pause          : Pause subscriptions",
+              ".resume         : Resume subscriptions",
               ".say [msg]      : Publish a message",
+              ".me [member #]  : Set your member Id (e.g. 45310686)",
               ".status         : Status info",
               #      ".app [urn]      : Set application context",
               #      ".feeds          : View feeds defined in current application context",
@@ -82,6 +85,7 @@ class USCPclient
   end
 
   def handle_user_input(msg)
+
     if msg.chomp == "QUIT"
       self.disconnect()
     else
@@ -107,8 +111,17 @@ class USCPclient
         elsif msg.match(/^\.status$/)
           status_info()
 
+        elsif msg.match(/^\.me (.+?)$/)
+          exec_set_actor($1)
+
         elsif msg.match(/^\.bql-help/)
           exec_bql_help()
+
+        elsif msg.match(/^\.pause$/)
+          exec_pause
+
+        elsif msg.match(/^\.resume$/)
+          exec_resume
 
         elsif msg.match(/^\.quit$/)
           self.disconnect()
@@ -117,7 +130,11 @@ class USCPclient
           self.disconnect()
 
         elsif msg.match(/^\.say (.+)$/)
-          exec_say($1)
+          if @actor.nil?
+            reply_user(@jid, "set your member id with .me [member # (e.g. 45310686)]", "std")
+          else
+            exec_say($1)
+          end
 
         else
           reply(["sup dawg"])
@@ -157,6 +174,7 @@ class USCPclient
 
   def status_info()
     msgs = []
+    msgs.push("paused: " + @paused.to_s)
     msgs.push("app: " + @app)
     msgs.push("subscriptions:")
     @subscriptions.each {|key, value|
@@ -274,6 +292,25 @@ class USCPclient
     verb
   end
 
+  def exec_set_actor(id)
+    @actor = "urn:member:"+id
+  end
+
+  def exec_app(app)
+    @app = app
+    status_info()
+  end
+
+  def exec_pause()
+    @paused = true
+    status_info()
+  end
+
+  def exec_resume()
+    @paused = false
+    status_info()
+  end
+
   def exec_say(msg)
     verb = create_verb_summary("urn:verb:ucpbot:say", msg, nil)
     object = create_object_summary(nil, nil, nil, nil, nil, nil)
@@ -294,11 +331,6 @@ class USCPclient
     reply(msgs)
   end
 
-  def exec_app(app)
-    @app = app
-    status_info()
-  end
-
   def exec_bql(bql)
     code, header, body = query_feed(bql, {})
     newActivities = convert_feed(body)
@@ -313,11 +345,11 @@ class USCPclient
     unsubscribe(name)
   end
 
-  def reply(msgs)
+  def reply_msg(msgs)
     reply_user(@jid, "\n" + msgs.join("\n"), "std")
   end
 
-  def reply_ind(msgs)
+  def reply(msgs)
     msgs.each do |msg|
       reply_user(@jid, msg, "std")
     end
