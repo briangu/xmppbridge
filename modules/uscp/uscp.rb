@@ -29,7 +29,7 @@ class USCPclient
     @channel_list = Array.new
     @subscriptions = {}
     @paused = false
-    @goal = nil
+    @goal = "query"
     @poll_count = 100
 
     @tt = Tagger.new
@@ -182,9 +182,10 @@ class USCPclient
           @firstName = record["firstName"]
           reply(["Hi there, #{@firstName}",
                  "I think your member # is #{@memberId}"])
-          @goal = nil
+          @goal = "query"
         end
       else
+        puts @goal
         if @actor.nil?
           @goal = 'ask_user_name'
           seek_goal(msg)
@@ -211,9 +212,18 @@ class USCPclient
 
   def do_query(msg, tags)
     # to make a query we need:
-    # extract VBG --> verb
+    # goal get verb
+    #   extract VBG --> verb
+    # goal get network scope
+    #   distance
+    #   individual
+    #   subset
+    #     company
+    #     school
+    #
     # extract
 
+    reply(["OK, searching..."])
     bql = get_network_query(@memberId)
     puts bql
     body = poll_feed(bql, "{}")
@@ -247,10 +257,10 @@ class USCPclient
 
   def status_info()
     msgs = []
-    msgs.push("paused: " + @paused.to_s)
     msgs.push("actor: " + @actor)
     msgs.push("firstName: " + @firstName)
     msgs.push("app: " + @app)
+    msgs.push("paused: " + @paused.to_s)
     msgs.push("subscriptions:")
     @subscriptions.each {|key, value|
       msgs.push("#{key} => #{value[:bql]} [#{value[:params]}] ")
