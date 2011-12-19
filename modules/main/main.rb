@@ -227,7 +227,7 @@ class XMPPBridgeMain
         logit("Received presence update from #{ujid}: #{presence.to_s}")
         # Update Presence in db
         unless verify_user_db_entry(ujid)
-          reply_user(ujid, "Setting your nickname to '#{$user_nicks[ujid]}'.  Use the !reserve command to select a new nickname.", "std")
+#          reply_user(ujid, "Setting your nickname to '#{$user_nicks[ujid]}'.  Use the !reserve command to select a new nickname.", "std")
         else 
           $db.execute("UPDATE roster SET lastpres='#{presence.to_s}' WHERE rjid='" + sql_sanitize(ujid) + "'")
           if presence.to_s == "online" and add_user_to_lobby?(ujid)

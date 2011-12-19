@@ -3,6 +3,8 @@ require 'socket'
 require 'json'
 require 'lrucache'
 require File.dirname(__FILE__) + '/http'
+require File.dirname(__FILE__) + '/tagger'
+require 'mongo'
 
 class USCPclient
 
@@ -27,6 +29,10 @@ class USCPclient
     @channel_list = Array.new
     @subscriptions = {}
     @paused = false
+    @goal = nil
+
+    @tt = Tagger.new
+    @members = Mongo::Connection.new("eat1-app56.corp.linkedin.com").db("ucp_members").collection("members")
 
     @cache = LRUCache.new(:max_size => 4096, :default => nil)
 
@@ -39,7 +45,6 @@ class USCPclient
         logit("USCPclient v#{@version} - #{@jid} connection successful.")
         reply_user(@jid, "Welcome to USCP client v#{@version}!", $mtype)
         reply_user(@jid, "Type .h to get help.", "std")
-        reply_user(@jid, "use the .me command to set your member # (e.g. 45310686)", "std")
         $lobby_users.each do |u|
           reply_user(u, "#{$user_nicks[@jid]} connected to the USCP.", $mtype)
         end
@@ -75,7 +80,7 @@ class USCPclient
               ".pause          : Pause subscriptions",
               ".resume         : Resume subscriptions",
               ".say [msg]      : Publish a message",
-              ".me [member #]  : Set your member Id (e.g. 45310686)",
+              ".id [member #]  : Set your member Id (e.g. 45310686)",
               ".status         : Status info",
               #      ".app [urn]      : Set application context",
               #      ".feeds          : View feeds defined in current application context",
@@ -111,7 +116,7 @@ class USCPclient
         elsif msg.match(/^\.status$/)
           status_info()
 
-        elsif msg.match(/^\.me (.+?)$/)
+        elsif msg.match(/^\.id (.+?)$/)
           exec_set_actor($1)
 
         elsif msg.match(/^\.bql-help/)
@@ -129,6 +134,12 @@ class USCPclient
         elsif msg.match(/^\.quit (.+)$/)
           self.disconnect()
 
+        elsif msg.match(/^\.goal (.+)$/)
+          @goal = $1
+
+        elsif msg.match(/^\.load_lex$/)
+          @tt = Tagger.new
+
         elsif msg.match(/^\.say (.+)$/)
           if @actor.nil?
             reply_user(@jid, "set your member id with .me [member # (e.g. 45310686)]", "std")
@@ -137,7 +148,7 @@ class USCPclient
           end
 
         else
-          reply(["sup dawg"])
+          seek_goal(msg)
         end
 
       rescue SocketError => se
@@ -146,6 +157,51 @@ class USCPclient
         reply_user(@jid, "Error (send): " + ex.to_s, "std")
       end
     end
+  end
+
+  def seek_goal(msg)
+
+    case @goal
+      when 'ask_user_name'
+        reply(["hey stranger, what's your name?"])
+        @goal = 'get_name'
+      when 'get_name'
+        reply(["Hold on, searching for you..."])
+        actor, record = get_actor_by_name(msg)
+        @actor = actor
+        @firstName = record["firstName"]
+        reply(["Hi there, #{@firstName}"])
+        @goal = nil
+      else
+        if @actor.nil?
+          @goal = 'ask_user_name'
+          seek_goal(msg)
+        else
+          process(msg)
+        end
+    end
+  end
+
+  def process(msg)
+    tags = @tt.getTags(msg)
+    if tags.include?('UH')
+      greet(msg, tags)
+    elsif tags.include?('WP')
+      do_query(msg, tags)
+    else
+      reply(["ask me a question, like: what are my friends doing?"])
+    end
+  end
+
+  def greet(msg, tags)
+    reply(["Hi there, #{@firstName}"])
+  end
+
+  def do_query(msg, tags)
+    # to make a query we need:
+    # extract VBG --> verb
+    # extract
+
   end
 
   def disconnect(ujid=nil)
@@ -175,6 +231,8 @@ class USCPclient
   def status_info()
     msgs = []
     msgs.push("paused: " + @paused.to_s)
+    msgs.push("actor: " + @actor)
+    msgs.push("firstName: " + @firstName)
     msgs.push("app: " + @app)
     msgs.push("subscriptions:")
     @subscriptions.each {|key, value|
@@ -361,4 +419,27 @@ class USCPclient
     data = JSON.parse(json)
     data["selections"]
   end
+
+  def get_actor_by_name(name)
+    parts = name.split(' ')
+    firstName = parts[0]
+    lastName = parts.length > 1 ? parts[1] : ''
+    return search_member({"firstName" => firstName, "lastName" => lastName})
+  end
+
+  def get_actor_by_username(username)
+    return search_member({"username" => "#{user}"})
+  end
+
+  def search_member(query)
+    record = @members.find_one(query)
+    if  record.nil? or record["id"].nil?
+      actor = "urn:member:117103187"
+    else
+      actor = "urn:member:#{record["id"]}"
+    end
+    puts "actor: #{actor}"
+    return actor, record
+  end
+
 end # class
