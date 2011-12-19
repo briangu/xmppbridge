@@ -215,9 +215,10 @@ class USCPclient
     # extract
 
     bql = get_network_query(@memberId)
-    activities = poll_feed(bql, "{}")
-    newActivities = filter_feed(key, activities)
-    send_to_user(newActivities)
+    puts bql
+    body = poll_feed(bql, "{}")
+    activities = convert_feed(body)
+    send_to_user(activities)
   end
 
   def disconnect(ujid=nil)
@@ -279,12 +280,12 @@ class USCPclient
     @subscriptions.each {|key, value|
       logit("checking feed: " + value[:bql])
       activities = poll_feed(value[:bql], value[:params])
-      newActivities = filter_feed(key, activities)
+      newActivities = filter_feed(activities)
       send_to_user(newActivities)
     }
   end
 
-  def filter_feed(name, raw_json)
+  def filter_feed(raw_json)
     json = JSON.parse(raw_json)
     activities = json["value"]
     newActivities = Array.new
