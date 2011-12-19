@@ -30,6 +30,7 @@ class USCPclient
     @subscriptions = {}
     @paused = false
     @goal = nil
+    @poll_count = 100
 
     @tt = Tagger.new
     @members = Mongo::Connection.new("eat1-app56.corp.linkedin.com").db("ucp_members").collection("members")
@@ -53,8 +54,9 @@ class USCPclient
         #$b.xmpp.status(nil,$b.get_status)
 
         loop do
-          poll_subscriptions() unless @paused
-          sleep 10
+          poll_subscriptions() if !@paused && @poll_count >= 10
+          @poll_count += 1
+          sleep 1
         end
       rescue Exception => e
         reply_user(@jid, "Socket: " + e.to_s + "\n" + e.backtrace.join, "std")
@@ -109,6 +111,7 @@ class USCPclient
 
         elsif msg.match(/^\.s (.+?) (.+)$/)
           exec_sub($1, $2, {})
+          @poll_count = 100
 
         elsif msg.match(/^\.unsub (.+?)$/)
           exec_unsub($1)
@@ -145,6 +148,7 @@ class USCPclient
             reply_user(@jid, "set your member id with .me [member # (e.g. 45310686)]", "std")
           else
             exec_say($1)
+            @poll_count = 100
           end
 
         else
@@ -160,18 +164,26 @@ class USCPclient
   end
 
   def seek_goal(msg)
-
     case @goal
       when 'ask_user_name'
         reply(["hey stranger, what's your name?"])
         @goal = 'get_name'
       when 'get_name'
         reply(["Hold on, searching for you..."])
-        actor, record = get_actor_by_name(msg)
-        @actor = actor
-        @firstName = record["firstName"]
-        reply(["Hi there, #{@firstName}"])
-        @goal = nil
+        cursor = get_actor_by_name(msg)
+        if cursor.nil? or cursor.count() == 0
+          reply(["I don't know anyone by that name. Who are you really?"])
+        elsif cursor.count() > 1
+          reply(["I have too many matches, please be more specific"])
+        else
+          memberId, actor, record = extract_member_info(cursor)
+          @memberId = memberId
+          @actor = actor
+          @firstName = record["firstName"]
+          reply(["Hi there, #{@firstName}",
+                 "I think your member # is #{@memberId}"])
+          @goal = nil
+        end
       else
         if @actor.nil?
           @goal = 'ask_user_name'
@@ -202,6 +214,10 @@ class USCPclient
     # extract VBG --> verb
     # extract
 
+    bql = get_network_query(@memberId)
+    activities = poll_feed(bql, "{}")
+    newActivities = filter_feed(key, activities)
+    send_to_user(newActivities)
   end
 
   def disconnect(ujid=nil)
@@ -259,6 +275,7 @@ class USCPclient
   end
 
   def poll_subscriptions
+    @poll_count = 0
     @subscriptions.each {|key, value|
       logit("checking feed: " + value[:bql])
       activities = poll_feed(value[:bql], value[:params])
@@ -370,11 +387,11 @@ class USCPclient
   end
 
   def exec_say(msg)
+    reply(["OK, sending: " + msg])
     verb = create_verb_summary("urn:verb:ucpbot:say", msg, nil)
     object = create_object_summary(nil, nil, nil, nil, nil, nil)
     activity = create_activity("urn:app:ucpbot", @actor, verb, object, default_visibility)
     publish_activity(activity)
-#    reply(["you said: " + msg])
   end
 
   def exec_bql_help()
@@ -422,9 +439,15 @@ class USCPclient
 
   def get_actor_by_name(name)
     parts = name.split(' ')
-    firstName = parts[0]
-    lastName = parts.length > 1 ? parts[1] : ''
-    return search_member({"firstName" => firstName, "lastName" => lastName})
+    if (parts.length == 1)
+      firstName = parts[0]
+      query = {"firstName" => firstName}
+    else
+      firstName = parts[0]
+      lastName = parts.length > 1 ? parts[1] : ''
+      query = {"firstName" => firstName, "lastName" => lastName}
+    end
+    search_member(query)
   end
 
   def get_actor_by_username(username)
@@ -432,14 +455,39 @@ class USCPclient
   end
 
   def search_member(query)
-    record = @members.find_one(query)
-    if  record.nil? or record["id"].nil?
-      actor = "urn:member:117103187"
+    cursor = @members.find(query)
+    puts cursor.inspect
+    puts cursor.count()
+    cursor
+  end
+
+  def extract_member_info(cursor)
+    record = cursor.next
+    puts record.inspect
+    if record.nil? or record["id"].nil?
+      memberId = 117103187
     else
-      actor = "urn:member:#{record["id"]}"
+      memberId = record["id"]
     end
+    actor = "urn:member:#{memberId}"
     puts "actor: #{actor}"
-    return actor, record
+    return memberId, actor, record
+  end
+
+  def get_query_prefix()
+    "select * from ucp where "
+  end
+
+  def get_network_query(memberId)
+    get_query_prefix() + " verb.type not in (\"comment\") and " + get_network_query_suffix(memberId)
+  end
+
+  def get_actor_query(memberId)
+    "actor.id in (\"urn:member:$memberId\")"
+  end
+
+  def get_network_query_suffix(memberId)
+    "My-Network in (\"0\", \"1\") GIVEN FACET PARAM (My-Network, \"srcid\", int, \"#{memberId}\")"
   end
 
 end # class
