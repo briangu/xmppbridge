@@ -36,6 +36,7 @@ class USCPclient
     @goal = "query"
     @poll_count = 100
     @dict = LinkParser::Dictionary.new
+    @debug = false
 
     @tt = Tagger.new
     @members = Mongo::Connection.new("eat1-app56.corp.linkedin.com").db("ucp_members").collection("members")
@@ -136,6 +137,10 @@ class USCPclient
         elsif msg.match(/^\.resume$/)
           exec_resume
 
+        elsif msg.match(/^\.debug$/)
+          @debug = !@debug
+          status_info()
+
         elsif msg.match(/^\.quit$/)
           self.disconnect()
 
@@ -220,15 +225,16 @@ class USCPclient
 
   def do_query(msg, taggable, parts, tags)
     bql = simple_parser(msg, taggable, parts, tags)
-    if parts[0] == "subscribe"
-      reply(["Subscribing to your query..."])
-      exec_sub("q"+(@subscriptions.length+1).to_s, bql, "")
-    end
-    reply(["OK, searching with: " + bql])
+    reply(["OK, searching..."])
+    reply(["bql: " + bql]) if @debug
     puts bql
     body = poll_feed(bql, "{}")
     activities = convert_feed(body)
     send_to_user(activities)
+    if parts[0] == "subscribe"
+      reply(["Subscribing to your query..."])
+      exec_sub("q"+(@subscriptions.length+1).to_s, bql, "")
+    end
   end
 
   # to make a query we need:
@@ -265,7 +271,7 @@ class USCPclient
         if (tags[idx+2] == "NNP" || (tags[idx+2].nil? && !parts[idx+2].nil?))
           scope += " " + parts[idx+2]
         end
-        reply([scope])
+        reply(["scope: " + scope]) if @debug
       end
     end
 
@@ -385,6 +391,7 @@ class USCPclient
 
   def status_info()
     msgs = []
+    msgs.push("debug: " + @debug.to_s)
     msgs.push("actor: " + @actor)
     msgs.push("firstName: " + @firstName)
     msgs.push("app: " + @app)
