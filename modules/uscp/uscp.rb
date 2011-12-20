@@ -2,9 +2,13 @@ require 'rubygems'
 require 'socket'
 require 'json'
 require 'lrucache'
+require 'linguistics'
+require 'mongo'
 require File.dirname(__FILE__) + '/http'
 require File.dirname(__FILE__) + '/tagger'
-require 'mongo'
+
+require 'linkparser'
+Linguistics::use(:en)
 
 class USCPclient
 
@@ -31,6 +35,7 @@ class USCPclient
     @paused = false
     @goal = "query"
     @poll_count = 100
+    @dict = LinkParser::Dictionary.new
 
     @tt = Tagger.new
     @members = Mongo::Connection.new("eat1-app56.corp.linkedin.com").db("ucp_members").collection("members")
@@ -145,7 +150,8 @@ class USCPclient
 
         elsif msg.match(/^\.say (.+)$/)
           if @actor.nil?
-            reply_user(@jid, "set your member id with .me [member # (e.g. 45310686)]", "std")
+            @goal = 'ask_user_name'
+            seek_goal("")
           else
             exec_say($1)
             @poll_count = 100
@@ -196,11 +202,13 @@ class USCPclient
   end
 
   def process(msg)
-    tags = @tt.getTags(msg)
+    parts = msg.split(/[\s\?\!.]/)
+    taggable = parts.join(" ")
+    tags = @tt.getTags(taggable)
     if tags.include?('UH')
       greet(msg, tags)
     elsif tags.include?('WP')
-      do_query(msg, tags)
+      do_query(msg, taggable, parts, tags)
     else
       reply(["ask me a question, like: what are my friends doing?"])
     end
@@ -210,25 +218,127 @@ class USCPclient
     reply(["Hi there, #{@firstName}"])
   end
 
-  def do_query(msg, tags)
-    # to make a query we need:
-    # goal get verb
-    #   extract VBG --> verb
-    # goal get network scope
-    #   distance
-    #   individual
-    #   subset
-    #     company
-    #     school
-    #
-    # extract
-
-    reply(["OK, searching..."])
-    bql = get_network_query(@memberId)
+  def do_query(msg, taggable, parts, tags)
+    bql = simple_parser(msg, taggable, parts, tags)
+    reply(["OK, searching with: " + bql])
     puts bql
     body = poll_feed(bql, "{}")
     activities = convert_feed(body)
     send_to_user(activities)
+  end
+
+  # to make a query we need:
+  # goal get verb
+  #   extract VBG --> verb
+  # goal get network scope
+  #   distance
+  #   individual
+  #   subset
+  #     company
+  #     school
+  #
+  # extract
+  def simple_parser(msg, taggable, parts, tags)
+    wp = parts[tags.index "WP"]
+
+    if tags.include? "VBG"
+      vbg = parts[tags.index "VBG"]
+    end
+
+    if tags.include? "PRP$"
+      idx = tags.index "PRP$"
+      scopeTarget = parts[idx]
+      if (tags[idx+1] == "NNS")
+        scope = parts[idx+1]
+      end
+    end
+
+    if tags.include? "VBZ"
+      idx = tags.index "VBZ"
+      scopeTarget = parts[idx]
+      if (tags[idx+1] == "NNP" || tags[idx+1].nil?)
+        scope = parts[idx+1]
+      end
+    end
+
+    if vbg.nil?
+      reply(["You didn't ask about what people are doing."])
+      vbg = 'doing'
+    end
+
+    if scope.nil?
+      reply(["Who are you asking about?"])
+      scopeTarget = 'my'
+      scope = 'friends'
+    end
+
+    bql = get_query_prefix
+
+    clauses = []
+#    clauses.push("verb.type not in ('urn:linkedin:comment')")
+
+    verbs = []
+    case vbg
+      when 'reading'
+        verbs.push("'urn:linkedin:discuss'")
+        verbs.push("'urn:linkedin:post'")
+        verbs.push("'urn:linkedin:share'")
+        verbs.push("'urn:linkedin:like'")
+      when 'posting'
+        verbs.push("'urn:linkedin:post'")
+        verbs.push("'urn:linkedin:share'")
+      when 'following'
+        verbs.push("'urn:linkedin:following'")
+    end
+
+    if verbs.length > 0
+      clauses.push("verb.type in ('#{verbs.join(",")}')")
+    end
+
+    case scopeTarget
+      when 'my'
+        bql += get_network_query_suffix(@memberId)
+      when 'is'
+        cursor = get_actor_by_name(scope)
+        actors = []
+        if cursor.nil? or cursor.count() == 0
+          reply(["I don't know anyone by that name."])
+        else
+          cursor.each do |item|
+            memberId, actor, record = extract_member_info(cursor)
+            actors.push("'"+actor+"'")
+          end
+        end
+        if actors.length > 0
+          clauses.push("actor.id in (#{actors.join(",")})")
+        end
+    end
+
+    bql += clauses.join(" and ")
+
+    bql
+  end
+
+  def fancy_parser(msg, tags)
+    sent = @dict.parse(msg)
+    if sent.num_valid_linkages == 0
+      reply(["I don't know what you are asking about.  Ask me again.'"])
+      return
+    end
+
+    # build query
+    linkages = sent.linkages
+    links = linkages[0]
+    links.each do |link|
+      case link.label
+        when "Wq"
+          if link.lword == "LEFT-WALL"
+          else
+          end
+        when 'Bsw'
+          whp = ''
+      end
+    end
   end
 
   def disconnect(ujid=nil)
@@ -498,7 +608,7 @@ class USCPclient
   end
 
   def get_network_query_suffix(memberId)
-    "My-Network in (\"0\", \"1\") GIVEN FACET PARAM (My-Network, \"srcid\", int, \"#{memberId}\")"
+    " My-Network in (\"0\", \"1\") GIVEN FACET PARAM (My-Network, \"srcid\", int, \"#{memberId}\")"
   end
 
 end # class
