@@ -230,7 +230,11 @@ class USCPclient
     puts bql
     body = poll_feed(bql, "{}")
     activities = convert_feed(body)
-    send_to_user(activities)
+    if (activities.nil? or activities.length == 0)
+      reply(["I didn't find any activities, sorry."])
+    else
+      send_to_user(activities)
+    end
     if parts[0] == "subscribe"
       reply(["Subscribing to your query..."])
       exec_sub("q"+(@subscriptions.length+1).to_s, bql, "")
@@ -294,15 +298,15 @@ class USCPclient
     verbs = []
     case vbg
       when 'reading'
-        verbs.push("'urn:linkedin:discuss'")
-        verbs.push("'urn:linkedin:post'")
-        verbs.push("'urn:linkedin:share'")
-        verbs.push("'urn:linkedin:like'")
+        verbs.push("urn:linkedin:discuss")
+        verbs.push("urn:linkedin:post")
+        verbs.push("urn:linkedin:share")
+        verbs.push("urn:linkedin:like")
       when 'posting'
-        verbs.push("'urn:linkedin:post'")
-        verbs.push("'urn:linkedin:share'")
+        verbs.push("urn:linkedin:post")
+        verbs.push("urn:linkedin:share")
       when 'following'
-        verbs.push("'urn:linkedin:following'")
+        verbs.push("urn:linkedin:following")
     end
 
     if verbs.length > 0
@@ -326,6 +330,7 @@ class USCPclient
         else
           cursor.each do |item|
             memberId, actor, record = extract_member_info(item)
+            next if memberId.nil?
             actors.push("'"+actor+"'")
           end
         end
@@ -610,7 +615,7 @@ class USCPclient
   def extract_member_info(record)
     puts record.inspect
     if record.nil? or record["id"].nil?
-      memberId = 117103187
+      memberId = nil
     else
       memberId = record["id"]
     end
