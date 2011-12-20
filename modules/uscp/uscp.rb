@@ -182,7 +182,7 @@ class USCPclient
         elsif cursor.count() > 1
           reply(["I have too many matches, please be more specific"])
         else
-          memberId, actor, record = extract_member_info(cursor)
+          memberId, actor, record = extract_member_info(cursor.next)
           @memberId = memberId
           @actor = actor
           @firstName = record["firstName"]
@@ -262,6 +262,10 @@ class USCPclient
       scopeTarget = parts[idx]
       if (tags[idx+1] == "NNP" || tags[idx+1].nil?)
         scope = parts[idx+1]
+        if (tags[idx+2] == "NNP" || (tags[idx+2].nil? && !parts[idx+2].nil?))
+          scope += " " + parts[idx+2]
+        end
+        reply([scope])
       end
     end
 
@@ -315,7 +319,7 @@ class USCPclient
           reply(["I don't know anyone by that name."])
         else
           cursor.each do |item|
-            memberId, actor, record = extract_member_info(cursor)
+            memberId, actor, record = extract_member_info(item)
             actors.push("'"+actor+"'")
           end
         end
@@ -579,7 +583,7 @@ class USCPclient
       query = {"firstName" => firstName}
     else
       firstName = parts[0]
-      lastName = parts.length > 1 ? parts[1] : ''
+      lastName = parts[1]
       query = {"firstName" => firstName, "lastName" => lastName}
     end
     search_member(query)
@@ -596,8 +600,7 @@ class USCPclient
     cursor
   end
 
-  def extract_member_info(cursor)
-    record = cursor.next
+  def extract_member_info(record)
     puts record.inspect
     if record.nil? or record["id"].nil?
       memberId = 117103187
