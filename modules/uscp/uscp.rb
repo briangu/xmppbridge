@@ -220,6 +220,10 @@ class USCPclient
 
   def do_query(msg, taggable, parts, tags)
     bql = simple_parser(msg, taggable, parts, tags)
+    if parts[0] == "subscribe"
+      reply(["Subscribing to your query..."])
+      exec_sub("q"+(@subscriptions.length+1).to_s, bql, "")
+    end
     reply(["OK, searching with: " + bql])
     puts bql
     body = poll_feed(bql, "{}")
@@ -297,7 +301,13 @@ class USCPclient
 
     case scopeTarget
       when 'my'
-        bql += get_network_query_suffix(@memberId)
+        case scope
+          when 'friends'
+            includeNetwork = true
+            clauses.push("My-Network in ('0','1')")
+          when 'coworkers'
+            clauses.push("actor.company = 'urn:company:1337'")
+        end
       when 'is'
         cursor = get_actor_by_name(scope)
         actors = []
@@ -315,6 +325,10 @@ class USCPclient
     end
 
     bql += clauses.join(" and ")
+
+    if !includeNetwork.nil?
+      bql += get_network_query_suffix(@memberId)
+    end
 
     bql
   end
@@ -600,7 +614,7 @@ class USCPclient
   end
 
   def get_network_query(memberId)
-    get_query_prefix() + " verb.type not in (\"comment\") and " + get_network_query_suffix(memberId)
+    get_query_prefix() + " verb.type not in (\"comment\") and My-Network in ('0', '1')" + get_network_query_suffix(memberId)
   end
 
   def get_actor_query(memberId)
@@ -608,7 +622,8 @@ class USCPclient
   end
 
   def get_network_query_suffix(memberId)
-    " My-Network in (\"0\", \"1\") GIVEN FACET PARAM (My-Network, \"srcid\", int, \"#{memberId}\")"
+#    " My-Network in (\"0\", \"1\") GIVEN FACET PARAM (My-Network, \"srcid\", int, \"#{memberId}\")"
+    " GIVEN FACET PARAM (My-Network, \"srcid\", int, \"#{memberId}\")"
   end
 
 end # class
